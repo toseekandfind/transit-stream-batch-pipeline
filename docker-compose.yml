@@ -139,25 +139,24 @@ services:
       - ./warehouse:/opt/warehouse
 
   airflow:
-    image: apache/airflow:2.9.2
+    image: apache/airflow:2.9.2-python3.11
     container_name: tsbp-airflow
     depends_on:
       - kafka
       - spark-master
       - hive-server
     environment:
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
-      - AIRFLOW_UID=0
-    user: "0:0"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
       - ./spark/jobs:/opt/spark/jobs
       - ./warehouse:/opt/warehouse
       - /var/run/docker.sock:/var/run/docker.sock
-    command: bash -lc "apt-get update && apt-get install -y docker.io && pip install -r /opt/airflow/requirements.txt && airflow db migrate && airflow users create --username admin --password admin --firstname a --lastname b --role Admin --email admin@example.com || true && airflow scheduler & airflow webserver"
+    command: >-
+      bash -lc "pip install -r /opt/airflow/requirements.txt && airflow standalone"
     ports:
       - "8089:8080"
 
@@ -176,8 +175,8 @@ services:
       - ./ingestion/producer:/app
     command: >-
       bash -lc "pip install -r /app/requirements.txt && 
-      if [ -z \"$GTFS_RT_FEED_URL\" ]; then FEED_ARG=\"--demo\"; else FEED_ARG=\"--feed_url $GTFS_RT_FEED_URL\"; fi; 
-      python /app/gtfs_rt_kafka_producer.py --brokers $${KAFKA_BROKERS} --topic $${KAFKA_TOPIC} $FEED_ARG --feed_type $${GTFS_RT_FEED_TYPE}"
+      if [ -z \"$$GTFS_RT_FEED_URL\" ]; then FEED_ARG=\"--demo\"; else FEED_ARG=\"--feed_url $$GTFS_RT_FEED_URL\"; fi; 
+      python /app/gtfs_rt_kafka_producer.py --brokers $${KAFKA_BROKERS} --topic $${KAFKA_TOPIC} $$FEED_ARG --feed_type $${GTFS_RT_FEED_TYPE}"
     restart: unless-stopped
 
   jupyter:
