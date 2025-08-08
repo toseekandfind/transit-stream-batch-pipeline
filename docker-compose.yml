@@ -1,0 +1,200 @@
+version: "3.9"
+
+services:
+  zookeeper:
+    image: bitnami/zookeeper:3.9
+    container_name: tsbp-zookeeper
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD", "echo", "ruok", "|", "nc", "-w", "2", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: tsbp-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "29092:29092"
+    environment:
+      - KAFKA_ENABLE_KRAFT=no
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,PLAINTEXT_HOST://:29092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list | cat"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: tsbp-kafka-ui
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+    ports:
+      - "8083:8080"
+
+  flink-jobmanager:
+    image: flink:1.17.2-scala_2.12-java11
+    container_name: tsbp-flink-jobmanager
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8081"
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        parallelism.default: 1
+    volumes:
+      - ./flink/jobs:/opt/flink/jobs
+      - ./flink/init:/docker-entrypoint-initflink.d
+      - ./flink/lib:/opt/flink/lib
+    command: bash -lc "/docker-entrypoint.sh jobmanager & sleep 5 && /docker-entrypoint-initflink.d/prepare_and_run.sh"
+
+  flink-taskmanager:
+    image: flink:1.17.2-scala_2.12-java11
+    container_name: tsbp-flink-taskmanager
+    depends_on:
+      - flink-jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+        parallelism.default: 1
+    volumes:
+      - ./flink/lib:/opt/flink/lib
+    command: taskmanager
+
+  spark-master:
+    image: bitnami/spark:3.5
+    container_name: tsbp-spark-master
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "7077:7077"
+      - "8082:8080"
+    volumes:
+      - ./spark/jobs:/opt/spark/jobs
+      - ./warehouse:/opt/warehouse
+
+  spark-worker:
+    image: bitnami/spark:3.5
+    container_name: tsbp-spark-worker
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+    volumes:
+      - ./warehouse:/opt/warehouse
+
+  postgres-metastore:
+    image: bitnami/postgresql:14
+    container_name: tsbp-postgres-metastore
+    environment:
+      - POSTGRESQL_USERNAME=hive
+      - POSTGRESQL_PASSWORD=hive
+      - POSTGRESQL_DATABASE=metastore
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/bitnami/postgresql
+
+  hive-metastore:
+    image: bitnami/hive:3
+    container_name: tsbp-hive-metastore
+    depends_on:
+      - postgres-metastore
+    environment:
+      - HIVE_METASTORE_DB_HOST=postgres-metastore
+      - HIVE_METASTORE_DB_PORT_NUMBER=5432
+      - HIVE_METASTORE_DB_NAME=metastore
+      - HIVE_METASTORE_DB_USER=hive
+      - HIVE_METASTORE_DB_PASSWORD=hive
+      - HIVE_WAREHOUSE_DIR=/opt/warehouse
+    volumes:
+      - ./warehouse:/opt/warehouse
+    command: ["/opt/bitnami/scripts/hive/run.sh", "metastore"]
+
+  hive-server:
+    image: bitnami/hive:3
+    container_name: tsbp-hive-server
+    depends_on:
+      - hive-metastore
+    environment:
+      - HIVE_SERVER2_ENABLE=true
+      - HIVE_METASTORE_URI=thrift://hive-metastore:9083
+      - HIVE_WAREHOUSE_DIR=/opt/warehouse
+    ports:
+      - "10000:10000"
+    volumes:
+      - ./warehouse:/opt/warehouse
+    command: ["/opt/bitnami/scripts/hive/run.sh", "server"]
+
+  airflow:
+    image: apache/airflow:2.9.2
+    container_name: tsbp-airflow
+    depends_on:
+      - kafka
+      - spark-master
+      - hive-server
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW_UID=50000
+    user: "50000:0"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/requirements.txt:/opt/airflow/requirements.txt
+      - ./spark/jobs:/opt/spark/jobs
+      - ./warehouse:/opt/warehouse
+    command: bash -lc "pip install -r /opt/airflow/requirements.txt && airflow db migrate && airflow users create --username admin --password admin --firstname a --lastname b --role Admin --email admin@example.com || true && airflow scheduler & airflow webserver"
+    ports:
+      - "8089:8080"
+
+  gtfs-producer:
+    image: python:3.11-slim
+    container_name: tsbp-gtfs-producer
+    depends_on:
+      - kafka
+    environment:
+      - GTFS_RT_FEED_URL=
+      - GTFS_RT_FEED_TYPE=trip_updates
+      - GTFS_API_KEY=
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC=gtfs_trip_updates
+    volumes:
+      - ./ingestion/producer:/app
+    command: bash -lc "pip install -r /app/requirements.txt && python /app/gtfs_rt_kafka_producer.py --brokers ${KAFKA_BROKERS} --topic ${KAFKA_TOPIC} --feed_url ${GTFS_RT_FEED_URL} --feed_type ${GTFS_RT_FEED_TYPE}"
+    restart: unless-stopped
+
+  jupyter:
+    image: jupyter/minimal-notebook:python-3.11
+    container_name: tsbp-jupyter
+    environment:
+      - JUPYTER_TOKEN=dev
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./warehouse:/home/jovyan/warehouse
+
+volumes:
+  postgres-data:
+  
