@@ -22,10 +22,10 @@ def main():
 
     spark = get_spark("nightly_aggregations")
 
-    # Compute date range for "yesterday"
+    # Smoke test: aggregate "today" (UTC) so we don't need to wait until tomorrow
     today = datetime.utcnow().date()
-    start_dt = datetime.combine(today - timedelta(days=1), datetime.min.time())
-    end_dt = datetime.combine(today, datetime.min.time())
+    start_dt = datetime.combine(today, datetime.min.time())
+    end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time())
 
     # Read from Kafka
     df = (
@@ -57,17 +57,26 @@ def main():
 
     # Optional: join route names from GTFS static if available
     routes_csv = os.path.join(gtfs_static_dir, "routes.txt")
+    joined_with_routes = False
     if os.path.exists(routes_csv):
         routes = (
             spark.read.option("header", True).csv(routes_csv)
-            .select(F.col("route_id").cast("string").alias("r_route_id"), F.col("route_short_name"), F.col("route_long_name"))
+            .select(
+                F.col("route_id").cast("string").alias("r_route_id"),
+                F.col("route_short_name"),
+                F.col("route_long_name"),
+            )
         )
         filtered = filtered.join(routes, filtered.route_id == routes.r_route_id, "left")
+        joined_with_routes = True
 
     # Aggregate: average delay per route per day
-    agg = (
-        filtered.groupBy("event_date", "route_id", "route_short_name", "route_long_name")
-        .agg(F.avg("avg_delay_seconds").alias("avg_delay_seconds"))
+    group_cols = ["event_date", "route_id"]
+    if joined_with_routes:
+        group_cols += ["route_short_name", "route_long_name"]
+
+    agg = filtered.groupBy(*group_cols).agg(
+        F.avg("avg_delay_seconds").alias("avg_delay_seconds")
     )
 
     out_path = os.path.join(warehouse_dir, "aggregates", "route_delay_daily")
