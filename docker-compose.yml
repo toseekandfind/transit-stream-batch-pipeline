@@ -61,7 +61,6 @@ services:
     volumes:
       - ./flink/jobs:/opt/flink/jobs
       - ./flink/init:/docker-entrypoint-initflink.d
-      - ./flink/lib:/opt/flink/lib
     command: jobmanager
 
   flink-taskmanager:
@@ -75,8 +74,7 @@ services:
         jobmanager.rpc.address: flink-jobmanager
         taskmanager.numberOfTaskSlots: 2
         parallelism.default: 1
-    volumes:
-      - ./flink/lib:/opt/flink/lib
+    volumes: []
     command: taskmanager
 
   flink-submit:
@@ -87,7 +85,6 @@ services:
     volumes:
       - ./flink/jobs:/opt/flink/jobs
       - ./flink/init:/docker-entrypoint-initflink.d
-      - ./flink/lib:/opt/flink/lib
     entrypoint: bash -lc "sleep 8 && chmod +x /docker-entrypoint-initflink.d/prepare_and_run.sh && bash /docker-entrypoint-initflink.d/prepare_and_run.sh"
 
   spark-master:
@@ -128,36 +125,18 @@ services:
     volumes:
       - postgres-data:/bitnami/postgresql
 
-  hive-metastore:
-    image: bitnami/hive:3
-    container_name: tsbp-hive-metastore
-    depends_on:
-      - postgres-metastore
-    environment:
-      - HIVE_METASTORE_DB_HOST=postgres-metastore
-      - HIVE_METASTORE_DB_PORT_NUMBER=5432
-      - HIVE_METASTORE_DB_NAME=metastore
-      - HIVE_METASTORE_DB_USER=hive
-      - HIVE_METASTORE_DB_PASSWORD=hive
-      - HIVE_WAREHOUSE_DIR=/opt/warehouse
-    volumes:
-      - ./warehouse:/opt/warehouse
-    command: ["/opt/bitnami/scripts/hive/run.sh", "metastore"]
+  # Using Apache Hive 4 image with embedded metastore via HiveServer2
 
   hive-server:
-    image: bitnami/hive:3
+    image: apache/hive:4.0.0
     container_name: tsbp-hive-server
-    depends_on:
-      - hive-metastore
     environment:
-      - HIVE_SERVER2_ENABLE=true
-      - HIVE_METASTORE_URI=thrift://hive-metastore:9083
-      - HIVE_WAREHOUSE_DIR=/opt/warehouse
+      - SERVICE_NAME=hiveserver2
     ports:
       - "10000:10000"
+      - "10002:10002"
     volumes:
       - ./warehouse:/opt/warehouse
-    command: ["/opt/bitnami/scripts/hive/run.sh", "server"]
 
   airflow:
     image: apache/airflow:2.9.2
@@ -195,7 +174,10 @@ services:
       - KAFKA_TOPIC=gtfs_trip_updates
     volumes:
       - ./ingestion/producer:/app
-    command: bash -lc "pip install -r /app/requirements.txt && python /app/gtfs_rt_kafka_producer.py --brokers ${KAFKA_BROKERS} --topic ${KAFKA_TOPIC} --feed_url ${GTFS_RT_FEED_URL} --feed_type ${GTFS_RT_FEED_TYPE}"
+    command: >-
+      bash -lc "pip install -r /app/requirements.txt && 
+      if [ -z \"$GTFS_RT_FEED_URL\" ]; then FEED_ARG=\"--demo\"; else FEED_ARG=\"--feed_url $GTFS_RT_FEED_URL\"; fi; 
+      python /app/gtfs_rt_kafka_producer.py --brokers $${KAFKA_BROKERS} --topic $${KAFKA_TOPIC} $FEED_ARG --feed_type $${GTFS_RT_FEED_TYPE}"
     restart: unless-stopped
 
   jupyter:

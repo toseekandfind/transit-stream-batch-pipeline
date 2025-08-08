@@ -15,8 +15,8 @@ if [ ! -f "$JAR_DIR/$JSON_JAR" ]; then
   wget -q -O "$JAR_DIR/$JSON_JAR" "https://repo1.maven.org/maven2/org/apache/flink/flink-json/1.17.2/flink-json-1.17.2.jar"
 fi
 
-echo "Submitting PyFlink job..."
-/opt/flink/bin/flink run -m flink-jobmanager:8081 -py /opt/flink/jobs/pyflink_delays_job.py
+echo "Submitting Flink SQL job..."
+/opt/flink/bin/sql-client.sh -f /opt/flink/jobs/delays.sql -j /opt/flink/lib/${KAFKA_JAR} -j /opt/flink/lib/${JSON_JAR}
 
 echo "PyFlink job submitted."
 wait -n || true
