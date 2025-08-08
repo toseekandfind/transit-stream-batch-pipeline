@@ -62,7 +62,7 @@ services:
       - ./flink/jobs:/opt/flink/jobs
       - ./flink/init:/docker-entrypoint-initflink.d
       - ./flink/lib:/opt/flink/lib
-    command: bash -lc "/docker-entrypoint.sh jobmanager & sleep 5 && bash /docker-entrypoint-initflink.d/prepare_and_run.sh"
+    command: jobmanager
 
   flink-taskmanager:
     image: flink:1.17.2-scala_2.12-java11
@@ -78,6 +78,17 @@ services:
     volumes:
       - ./flink/lib:/opt/flink/lib
     command: taskmanager
+
+  flink-submit:
+    image: flink:1.17.2-scala_2.12-java11
+    container_name: tsbp-flink-submit
+    depends_on:
+      - flink-jobmanager
+    volumes:
+      - ./flink/jobs:/opt/flink/jobs
+      - ./flink/init:/docker-entrypoint-initflink.d
+      - ./flink/lib:/opt/flink/lib
+    entrypoint: bash -lc "sleep 8 && chmod +x /docker-entrypoint-initflink.d/prepare_and_run.sh && bash /docker-entrypoint-initflink.d/prepare_and_run.sh"
 
   spark-master:
     image: bitnami/spark:3.5
@@ -159,14 +170,15 @@ services:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
-      - AIRFLOW_UID=50000
-    user: "50000:0"
+      - AIRFLOW_UID=0
+    user: "0:0"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
       - ./spark/jobs:/opt/spark/jobs
       - ./warehouse:/opt/warehouse
-    command: bash -lc "pip install -r /opt/airflow/requirements.txt && airflow db migrate && airflow users create --username admin --password admin --firstname a --lastname b --role Admin --email admin@example.com || true && airflow scheduler & airflow webserver"
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: bash -lc "apt-get update && apt-get install -y docker.io && pip install -r /opt/airflow/requirements.txt && airflow db migrate && airflow users create --username admin --password admin --firstname a --lastname b --role Admin --email admin@example.com || true && airflow scheduler & airflow webserver"
     ports:
       - "8089:8080"
 
