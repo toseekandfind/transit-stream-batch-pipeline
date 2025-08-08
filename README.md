@@ -6,13 +6,13 @@ End-to-end stack to ingest GTFS-RT, process delays in near real time, run nightl
 
 ```mermaid
 graph LR
-  A[GTFS-RT Feed] -->|producer| K[(Kafka: gtfs_trip_updates)]
-  K --> F[Flink PyFlink job\nnear real-time delay calc]
-  F -->|JSON| KD[(Kafka: delays)]
-  KD --> S[Spark nightly batch\nmerge w/ GTFS static]
-  S -->|Parquet| W[(Warehouse folder)]
-  W --> H[Hive external tables]
-  H --> Q[SQL (Airflow/Jupyter/Superset)]
+  A["GTFS-RT Feed"] -->|producer| K[("Kafka: gtfs_trip_updates")]
+  K --> F["Flink PyFlink job<br/>near real-time delay calc"]
+  F -->|JSON| KD[("Kafka: delays")]
+  KD --> S["Spark nightly batch<br/>merge w/ GTFS static"]
+  S -->|Parquet| W[("Warehouse folder")]
+  W --> H["Hive external tables"]
+  H --> Q["SQL (Airflow/Jupyter/Superset)"]
 ```
 
 ### Services
