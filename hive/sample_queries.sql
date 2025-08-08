@@ -6,6 +6,8 @@ USE transit;
 
 CREATE EXTERNAL TABLE IF NOT EXISTS route_delay_daily (
     route_id STRING,
+    route_short_name STRING,
+    route_long_name STRING,
     avg_delay_seconds DOUBLE
 )
 PARTITIONED BY (event_date DATE)

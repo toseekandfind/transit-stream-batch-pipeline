@@ -1,0 +1,12 @@
+__pycache__/
+.pytest_cache/
+.idea/
+.vscode/
+*.pyc
+*.pyo
+*.DS_Store
+airflow/airflow.db
+warehouse/
+notebooks/.ipynb_checkpoints/
+.env
+

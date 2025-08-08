@@ -62,7 +62,7 @@ services:
       - ./flink/jobs:/opt/flink/jobs
       - ./flink/init:/docker-entrypoint-initflink.d
       - ./flink/lib:/opt/flink/lib
-    command: bash -lc "/docker-entrypoint.sh jobmanager & sleep 5 && /docker-entrypoint-initflink.d/prepare_and_run.sh"
+    command: bash -lc "/docker-entrypoint.sh jobmanager & sleep 5 && bash /docker-entrypoint-initflink.d/prepare_and_run.sh"
 
   flink-taskmanager:
     image: flink:1.17.2-scala_2.12-java11
@@ -90,6 +90,7 @@ services:
     volumes:
       - ./spark/jobs:/opt/spark/jobs
       - ./warehouse:/opt/warehouse
+      - ./data:/opt/data
 
   spark-worker:
     image: bitnami/spark:3.5
@@ -102,6 +103,7 @@ services:
       - SPARK_WORKER_MEMORY=2G
     volumes:
       - ./warehouse:/opt/warehouse
+      - ./data:/opt/data
 
   postgres-metastore:
     image: bitnami/postgresql:14

@@ -18,6 +18,7 @@ def main():
     warehouse_dir = os.environ.get("WAREHOUSE_DIR", "/opt/warehouse")
     kafka_bootstrap = os.environ.get("KAFKA_BOOTSTRAP", "kafka:9092")
     topic = os.environ.get("KAFKA_TOPIC", "delays")
+    gtfs_static_dir = os.environ.get("GTFS_STATIC_DIR", "/opt/data/gtfs_static")
 
     spark = get_spark("nightly_aggregations")
 
@@ -54,9 +55,19 @@ def main():
     # Filter to yesterday
     filtered = parsed.where((F.col("event_date") >= F.lit(start_dt.date().isoformat())) & (F.col("event_date") < F.lit(end_dt.date().isoformat())))
 
+    # Optional: join route names from GTFS static if available
+    routes_csv = os.path.join(gtfs_static_dir, "routes.txt")
+    if os.path.exists(routes_csv):
+        routes = (
+            spark.read.option("header", True).csv(routes_csv)
+            .select(F.col("route_id").cast("string").alias("r_route_id"), F.col("route_short_name"), F.col("route_long_name"))
+        )
+        filtered = filtered.join(routes, filtered.route_id == routes.r_route_id, "left")
+
     # Aggregate: average delay per route per day
     agg = (
-        filtered.groupBy("event_date", "route_id").agg(F.avg("avg_delay_seconds").alias("avg_delay_seconds"))
+        filtered.groupBy("event_date", "route_id", "route_short_name", "route_long_name")
+        .agg(F.avg("avg_delay_seconds").alias("avg_delay_seconds"))
     )
 
     out_path = os.path.join(warehouse_dir, "aggregates", "route_delay_daily")
