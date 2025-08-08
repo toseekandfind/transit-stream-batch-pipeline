@@ -24,21 +24,23 @@ graph LR
 - Jupyter: quick notebooks over Parquet outputs
 
 ### Getting started
-1) Prereqs: Docker Desktop, >= 8 GB RAM allocated to Docker.
+1) **Prerequisites**: Docker Desktop with >= 8 GB RAM allocated.
 
-2) Configure GTFS-RT feed (examples often require an API key). Set env in compose or export before up:
+2) **Configure real GTFS-RT feed** (optional - defaults to demo mode):
+   ```bash
+   cp env.example .env
+   # Edit .env with your feed URL and API key
+   ```
 
-```bash
-export GTFS_RT_FEED_URL="https://YOUR_FEED_URL"   # trip updates feed URL
-export GTFS_RT_FEED_TYPE="trip_updates"          # or vehicle_positions
-export GTFS_API_KEY="YOUR_KEY_IF_REQUIRED"
-```
+3) **Start the stack**:
+   ```bash
+   docker compose up -d --build
+   ```
 
-3) Start the stack:
-
-```bash
-docker compose up -d --build
-```
+4) **Health check**:
+   ```bash
+   python monitoring/healthcheck.py
+   ```
 
 4) UIs
 - Kafka UI: `http://localhost:8083`

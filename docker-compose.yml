@@ -82,10 +82,12 @@ services:
     container_name: tsbp-flink-submit
     depends_on:
       - flink-jobmanager
+      - kafka
     volumes:
       - ./flink/jobs:/opt/flink/jobs
       - ./flink/init:/docker-entrypoint-initflink.d
-    entrypoint: bash -lc "sleep 8 && chmod +x /docker-entrypoint-initflink.d/prepare_and_run.sh && bash /docker-entrypoint-initflink.d/prepare_and_run.sh"
+    entrypoint: bash -lc "sleep 15 && chmod +x /docker-entrypoint-initflink.d/prepare_and_run.sh && bash /docker-entrypoint-initflink.d/prepare_and_run.sh"
+    restart: unless-stopped
 
   spark-master:
     image: bitnami/spark:3.5
@@ -137,6 +139,14 @@ services:
       - "10002:10002"
     volumes:
       - ./warehouse:/opt/warehouse
+      - ./hive:/opt/hive-init
+    command: >-
+      bash -c "
+        /opt/hive/bin/hive --service hiveserver2 &
+        sleep 30 &&
+        /opt/hive/bin/beeline -u 'jdbc:hive2://localhost:10000' -f /opt/hive-init/init_tables.sql || true &&
+        wait
+      "
 
   airflow:
     image: apache/airflow:2.9.2-python3.11
